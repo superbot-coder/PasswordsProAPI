@@ -9,7 +9,7 @@ unit PasswordsProAPI;
 interface
 
 USES
-  Windows;
+  Windows, SysUtils, Dialogs;
 
 const
   // наличие этого флага означает, что модуль предназначен для работы с хэшами в бинарном виде.
@@ -92,20 +92,106 @@ Type TGetHash = procedure(HashInfo: PHashInfo); StdCall;
 // следующие параметры структуры PREPAREDINFO}
 Type TGetData = procedure(PreparedInfo: PPreparedInfo); StdCall;
 
-var
-  ModName    : string;
-  hModul     : THandle;
-  PrepInfo   : TPreparedInfo;
-  HashInfo   : THashInfo;
-  ModuleInfo : THashInfo;
-  GetInfo    : TGetInfo;
-  GetHash    : TGetHash;
-  GetData    : TGetData;
-
-//function Loadmodul(ModName: String): TНandle;
+type
+  THashMod = class(TObject)
+  private
+    FhModule  : Thandle;
+    FAbout    : string;
+    FModType  : string;
+    FFlags    : DWORD;
+    FHI       : THashInfo;
+    FAStrBuff : AnsiString;
+    FHashBuff : TBytes;
+    FHashSize : SmallInt;
+    GetInfo   : TGetInfo;
+    GetHash   : TGetHash;
+    procedure SetHashSize(const Value: SmallInt);
+  public
+    property HashSize: SmallInt read FHashSize write SetHashSize;
+    property About: string read FAbout;
+    property ModuleType: string read FModType;
+    function GetHashToHex(APassword: AnsiString): String;
+    function GetHashToBin(APassword: AnsiString): TBytes;
+    constructor Create(FileNameDll: String);
+    destructor Destroy;
+  end;
+  { THashMod }
 
 implementation
 
+constructor THashMod.Create(FileNameDll: String);
+var
+  MI:  TModuleInfo;
+begin
+  inherited Create;
+  FhModule := LoadLibrary(PChar(FileNameDll));
+  if FhModule = 0 then
+  begin
+    ShowMessage('Не удалось загрузить модуль: ' + FileNameDll);
+    free;
+    Exit;
+  end;
 
+  @GetInfo := GetProcAddress(FhModule, PChar('GetInfo'));
+  if @GetInfo = NIL Then
+  begin
+    ShowMessage('GetInfo = NIL');
+    exit;
+  end;
+
+  @GetHash := GetProcAddress(FhModule, PChar('GetHash'));
+  if @GetHash = NIL Then
+  begin
+    ShowMessage('GetHash = NIL');
+    Exit;
+  end;
+
+  GetInfo(@MI);
+  FAbout   := PAnsiChar(MI.szAbout);
+  FModType := PAnsiChar(MI.szType);
+  FFlags   := MI.dwFlags;
+
+  FHI.szSalt       := Nil;
+  FHI.nSaltLen     := 0;
+  FHI.szName       := Nil;
+  FHI.nNameLen     := 0;
+  FHI.dwFlags      := PPF_BINARY_HASH;
+end;
+
+destructor THashMod.Destroy;
+begin
+  FreeLibrary(FhModule);
+  inherited Destroy;
+end;
+
+function THashMod.GetHashToBin(APassword: AnsiString): TBytes;
+begin
+  if (FhModule = 0) or (FHashSize = 0) then Exit;
+  FHI.pHash        := PAnsiChar(FHashBuff);  // PAnsiChar(@FHashBuff[0]);
+  FHI.szPassword   := PAnsiChar(APassword);
+  FHI.nPasswordLen := Length(APassword);
+  GetHash(@FHI);
+  Result := FHashBuff;
+end;
+
+function THashMod.GetHashToHex(APassword: AnsiString): String;
+var
+  i: ShortInt;
+begin
+  if (FhModule = 0) or (FHashSize = 0) then Exit;
+  // FHI.pHash        := PAnsiChar(FHashBuff);
+  // FHI.szPassword   := PAnsiChar(APassword);
+  // FHI.nPasswordLen := Length(APassword);
+  // GetHash(@FHI);
+  GetHashToBin(APassword);
+  Result := '';
+  for i := 0 to FHashSize -1 do Result := Result + FHashBuff[i].ToHexString;
+end;
+
+procedure THashMod.SetHashSize(const Value: SmallInt);
+begin
+  FHashSize := Value;
+  Setlength(FHashBuff, Value);
+end;
 
 end.
