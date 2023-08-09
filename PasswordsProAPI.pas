@@ -103,7 +103,7 @@ type
     FHashSize : SmallInt;
     GetInfo   : TGetInfo;
     GetHash   : TGetHash;
-    // GetData   : TGetData;
+    GetData   : TGetData;
     procedure SetHashSize(const Value: SmallInt);
     function GetAbout: string;
     function GetModType: string;
@@ -120,13 +120,6 @@ type
   { THashMod }
 
 implementation
-
-var
-  // MI: TModuleInfo;
-  // HI: THashInfo;
-  //GetInfo : TGetInfo;
-  //GetHash : TGetHash;
-  GetData : TGetData;
 
 constructor THashMod.Create(FileNameDll: String);
 begin
