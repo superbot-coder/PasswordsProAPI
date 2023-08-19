@@ -9,40 +9,40 @@
 interface
 
 USES
-  Windows, SysUtils, Dialogs, Error;
+  Classes, Windows, SysUtils, Dialogs, Error;
 
 const
-  // наличие этого флага означает, что модуль предназначен для работы с хэшами в бинарном виде.
+  //Наличие этого флага означает, что модуль предназначен для работы с хэшами в бинарном виде.
   PPF_BINARY_HASH = $00000001;
 
-  //наличие этого флага означает, что хэш содержит в себе соль и другую информацию для хэширования.
+  //Наличие этого флага означает, что хэш содержит в себе соль и другую информацию для хэширования.
   //Модуль с таким флагом обязательно должен иметь функцию GetData().
   PPF_COMPLEX_HASH = $00000002;
 
-  //наличие этого флага означает, что для генерации хэша кроме пароля еще используется соль.
+  //Наличие этого флага означает, что для генерации хэша кроме пароля еще используется соль.
   PPF_USE_SALT = $00000100;
 
-  //наличие этого флага означает, что перед хэшированием необходимо подсчитать MD5-хэш от соли
+  //Наличие этого флага означает, что перед хэшированием необходимо подсчитать MD5-хэш от соли
   // и преобразовать его в 32-символьную строку.
   PPF_MD5_SALT = $00000200;
 
-  //наличие этого флага означает, что для генерации хэша кроме пароля еще используется имя пользователя.
+  //Наличие этого флага означает, что для генерации хэша кроме пароля еще используется имя пользователя.
   PPF_USE_NAME = $00010000;
 
-  //наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в Unicode.
+  //Наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в Unicode.
   PPF_UNICODE_NAME = $00020000;
 
-  //наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в нижний регистр.
+  //Наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в нижний регистр.
   PPF_LOWER_NAME = $00800000;
 
-  //наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в верхний регистр.
+  //Наличие этого флага означает, что имя пользователя перед хэшированием необходимо конвертировать в верхний регистр.
   PPF_UPPER_NAME = $00C00000;
 
-  // наличие этого флага означает, что модуль может генерировать хэш от входных данных объемом до 2Гб.
+  // Наличие этого флага означает, что модуль может генерировать хэш от входных данных объемом до 2Гб.
   // При отсутствии этого флага длина входных данных ограничена 127 символами.
   PPF_HUGE_PASS = $01000000;
 
-  //наличие этого флага означает, что пароль перед хэшированием необходимо конвертировать в Unicode.
+  //Наличие этого флага означает, что пароль перед хэшированием необходимо конвертировать в Unicode.
   PPF_UNICODE_PASS = $02000000;
 
   //с этим флагом функция вызывается во время атаки, что позволяет модулям возвращать хэши в том формате,
@@ -80,6 +80,7 @@ Type
     pSaltLen : Integer;   // Длина извлеченной соли
   End;
 
+
 // GetInfo() должна заполнять структуру TModuleInfo информацией об этом модуле:
 Type TGetInfo = procedure(ModInfo: PModuleInfo) cdecl; //StdCall;
 
@@ -112,8 +113,16 @@ type
     property HashSize: SmallInt read GetHashSize write SetHashSize;
     property About: string read GetAbout;
     property ModuleType: string read GetModType;
-    function GetHashToHex(APassword: AnsiString): String;
-    procedure GetHashToBin(APassword: PAnsiChar; PBuffer: PAnsiChar);
+    property PPF_FLAGS: DWORD read FHI.dwFlags;
+    // Только для (Only for): MSSQL(2000)/MSSQL(2005)
+    function GetHashToAnsi(Password: PChar; ASalt: PAnsiChar): AnsiString; overload;
+    function GetHashToAnsi(APassword, ASalt, AName: PAnsiChar): AnsiString; overload;
+    // Только для (only for): DCC/DCC2/NTLM
+    function GetHashToHex(Password, Name: PChar): String; overload;
+    function GetHashToHex(APassword, ASalt, AName: PAnsiChar): String; overload;
+    // Только для (only for): DCC/DCC2/NTLM
+    procedure GetHashToBin(Password, Name: PChar; PBuffer: PAnsiChar) overload;
+    procedure GetHashToBin(APassword, ASalt, AName: PAnsiChar; PBuffer: PAnsiChar) overload;
     constructor Create(FileNameDll: String);
     destructor Destroy;
   end;
@@ -147,6 +156,7 @@ begin
   GetInfo(@FMI);
   FHashSize := 0;
   Setlength(FHashBuff, 0);
+  FHI.dwFlags := FMI.dwFlags;
 
 end;
 
@@ -167,35 +177,47 @@ begin
   Result := FHashSize;
 end;
 
-procedure THashMod.GetHashToBin(APassword: PAnsiChar; PBuffer: PAnsiChar);
+procedure THashMod.GetHashToBin(APassword, ASalt, AName: PAnsiChar; PBuffer: PAnsiChar);
 begin
   if (FhModule = 0) then Exit;
   FHI.pHash        := PBuffer;
   FHI.szPassword   := APassword;
   FHI.nPasswordLen := Length(PAnsiChar(APassword));
-  FHI.szSalt       := Nil;
-  FHI.nSaltLen     := 0;
-  FHI.szName       := Nil;
-  FHI.nNameLen     := 0;
-  FHI.dwFlags      := PPF_BINARY_HASH;
+  FHI.szSalt       := ASalt;
+  FHI.nSaltLen     := Length(PAnsiChar(ASalt));
+  FHI.szName       := AName;
+  FHI.nNameLen     := Length(PAnsiChar(AName));
   GetHash(@FHI);
 end;
 
-function THashMod.GetHashToHex(APassword: AnsiString): String;
-var
-  i: ShortInt;
+function THashMod.GetHashToHex(Password, Name: PChar): String;
+begin
+  if (FhModule = 0) or (FHashSize = 0) then Exit;
+  FHI.pHash        := @FHashBuff[0];
+  FHI.szPassword   := PAnsiChar(Password);
+  FHI.nPasswordLen := Length(PChar(Password)) * 2;
+  FHI.szSalt       := Nil;
+  FHI.nSaltLen     := 0;
+  FHI.szName       := PAnsiChar(Name);
+  FHI.nNameLen     := Length(PChar(Name)) * 2;
+  GetHash(@FHI);
+  SetLength(Result, FHashSize * 2);
+  BinToHex(Pointer(FHashBuff), PChar(Result), FHashSize);
+end;
+
+function THashMod.GetHashToHex(APassword, ASalt, AName: PAnsiChar): String;
 begin
   if (FhModule = 0) or (FHashSize = 0) then Exit;
   FHI.pHash        := PAnsiChar(FHashBuff);
-  FHI.szPassword   := PAnsiChar(APassword);
-  FHI.nPasswordLen := Length(APassword);
-  FHI.szSalt       := Nil;
-  FHI.nSaltLen     := 0;
-  FHI.szName       := Nil;
-  FHI.nNameLen     := 0;
+  FHI.szPassword   := APassword;
+  FHI.nPasswordLen := Length(PAnsiChar(APassword));
+  FHI.szSalt       := ASalt;
+  FHI.nSaltLen     := Length(PAnsiChar(ASalt));
+  FHI.szName       := AName;
+  FHI.nNameLen     := Length(PAnsiChar(AName));
   GetHash(@FHI);
-  Result := '';
-  for i := 0 to FHashSize -1 do Result := Result + FHashBuff[i].ToHexString;
+  SetLength(Result,  FHashSize * 2);
+  BinToHex(Pointer(FHashBuff), PChar(Result), FHashSize);
 end;
 
 function THashMod.GetModType: string;
@@ -209,6 +231,47 @@ begin
     raise Exception.Create('Ошибка: HashSize = 0');
   FHashSize := Value;
   Setlength(FHashBuff, Value);
+end;
+
+function THashMod.GetHashToAnsi(Password: PChar; ASalt: PAnsiChar): AnsiString;
+begin
+  if (FhModule = 0) or (FHashSize = 0) then Exit;
+  SetLength(Result, FHashSize);
+  FHI.pHash        := PAnsiChar(Result);
+  FHI.szPassword   := PAnsiChar(Password);
+  FHI.nPasswordLen := Length(PChar(Password))*2;
+  FHI.szSalt       := ASalt;
+  FHI.nSaltLen     := Length(PAnsiChar(ASalt));
+  FHI.szName       := Nil;
+  FHI.nNameLen     := 0;
+  GetHash(@FHI);
+end;
+
+function THashMod.GetHashToAnsi(APassword, ASalt, AName: PAnsiChar): AnsiString;
+begin
+  if (FhModule = 0) or (FHashSize = 0) then Exit;
+  SetLength(Result, FHashSize);
+  FHI.pHash        := PAnsiChar(Result);
+  FHI.szPassword   := APassword;
+  FHI.nPasswordLen := Length(PAnsiChar(APassword));
+  FHI.szSalt       := ASalt;
+  FHI.nSaltLen     := Length(PAnsiChar(ASalt));
+  FHI.szName       := AName;
+  FHI.nNameLen     := Length(PAnsiChar(AName));
+  GetHash(@FHI);
+end;
+
+procedure THashMod.GetHashToBin(Password, Name: PChar; PBuffer: PAnsiChar);
+begin
+  if (FhModule = 0) then Exit;
+  FHI.pHash        := PBuffer;
+  FHI.szPassword   := PAnsiChar(Password);
+  FHI.nPasswordLen := Length(PChar(Password))*2;
+  FHI.szSalt       := Nil;
+  FHI.nSaltLen     := 0;
+  FHI.szName       := PAnsiChar(Name);
+  FHI.nNameLen     := Length(PChar(Name))*2;
+  GetHash(@FHI);
 end;
 
 end.
